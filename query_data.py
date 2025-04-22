@@ -1,21 +1,38 @@
 import argparse
-from langchain.vectorstores.chroma import Chroma
+from langchain_chroma import Chroma  # Update import to use the new package
 from langchain.prompts import ChatPromptTemplate
-from langchain_community.llms.ollama import Ollama
+from langchain_ollama import OllamaLLM  # Update import to use the new package
+from flask import Flask, request, jsonify  # Import Flask
 
 from get_embedding_function import get_embedding_function
 
 CHROMA_PATH = "chroma"
 
 PROMPT_TEMPLATE = """
-Answer the question based only on the following context:
+Jawab pertanyaan hanya berdasarkan konteks berikut dalam bahasa Indonesia dengan ramah dan sopan tetapi tidak membosankan dan mengulang greeting. 
+Jika tidak ada informasi yang relevan, katakan "Saya tidak tahu" tetapi tetap ramah.:
 
 {context}
 
 ---
 
-Answer the question based on the above context: {question}
+Jawab pertanyaan berdasarkan konteks di atas: {question}
+Tawarkan bantuan lain jika ada yang ingin ditanyakan.
 """
+
+
+def preprocess_query(query_text: str) -> str:
+    """
+    Replace specific phrases in the query text with "MAN 1 Kota Bogor".
+    """
+    query_text = query_text.lower()  # Convert text to lowercase
+    replacements = {
+        "sekolah ini": "MAN 1 Kota Bogor",
+        "disini": "MAN 1 Kota Bogor"
+    }
+    for old, new in replacements.items():
+        query_text = query_text.replace(old, new)
+    return query_text
 
 
 def main():
@@ -28,9 +45,16 @@ def main():
 
 
 def query_rag(query_text: str):
+    # Preprocess the query text.
+    query_text = preprocess_query(query_text)
+
     # Prepare the DB.
     embedding_function = get_embedding_function()
-    db = Chroma(persist_directory=CHROMA_PATH, embedding_function=embedding_function)
+    db = Chroma(
+        persist_directory=CHROMA_PATH,
+        embedding_function=embedding_function,
+        collection_name="default_collection"  # Explicitly specify a collection name
+    )
 
     # Search the DB.
     results = db.similarity_search_with_score(query_text, k=5)
@@ -40,7 +64,7 @@ def query_rag(query_text: str):
     prompt = prompt_template.format(context=context_text, question=query_text)
     # print(prompt)
 
-    model = Ollama(model="mistral")
+    model = OllamaLLM(model="llama3.1", temperature=0.3)  # Set temperature for accuracy
     response_text = model.invoke(prompt)
 
     sources = [doc.metadata.get("id", None) for doc, _score in results]
@@ -49,5 +73,23 @@ def query_rag(query_text: str):
     return response_text
 
 
+app = Flask(__name__)  # Initialize Flask app
+
+@app.route("/query", methods=["POST"])
+def query_endpoint():
+    data = request.json
+    if not data or "query_text" not in data:
+        return jsonify({"error": "Missing 'query_text' in request body"}), 400
+
+    query_text = preprocess_query(data["query_text"])  # Preprocess query text
+    response_text = query_rag(query_text)
+    return jsonify({"response": response_text})
+
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to run the server on.")
+    parser.add_argument("--port", type=int, default=5000, help="Port to run the server on.")
+    args = parser.parse_args()
+
+    app.run(host=args.host, port=args.port)
