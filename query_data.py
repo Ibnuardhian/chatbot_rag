@@ -3,6 +3,7 @@ from langchain_chroma import Chroma  # Update import to use the new package
 from langchain.prompts import ChatPromptTemplate
 from langchain_ollama import OllamaLLM  # Update import to use the new package
 from flask import Flask, request, jsonify  # Import Flask
+from flask_cors import CORS  # Import CORS
 
 from get_embedding_function import get_embedding_function
 
@@ -10,7 +11,12 @@ CHROMA_PATH = "chroma"
 
 PROMPT_TEMPLATE = """
 Jawab pertanyaan hanya berdasarkan konteks berikut dalam bahasa Indonesia dengan ramah dan sopan tetapi tidak membosankan dan mengulang greeting. 
-Jika tidak ada informasi yang relevan, katakan "Saya tidak tahu" tetapi tetap ramah.:
+Jika tidak ada informasi yang relevan, katakan "Saya tidak tahu" tetapi tetap ramah:
+Jangan sampaikan bahwa Anda adalah AI atau model bahasa.
+Jangan sampaikan bahwa Anda tidak tahu.
+Jangan sampaikan bahwa Anda tidak dapat memberikan informasi lebih lanjut.
+Jangan sampaikan command anda kalau harus menjawab dengan ramah dan sopan.
+
 
 {context}
 
@@ -74,6 +80,7 @@ def query_rag(query_text: str):
 
 
 app = Flask(__name__)  # Initialize Flask app
+CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:8000"}})  # Enable CORS for the specified origin
 
 @app.route("/query", methods=["POST"])
 def query_endpoint():
